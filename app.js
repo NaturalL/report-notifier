@@ -4,9 +4,7 @@ var jquery = require('jquery');
 var env = require('jsdom').env
 var nodemailer = require('nodemailer');
 var fs = require('fs');
-
 var privateConfig = require('./privateConfig')
-
 
 var oneDay = 24*60*60*1000;
 var notified = [];
@@ -19,18 +17,25 @@ fs.readFile('./notified.txt', function (err, buf) {
     if(obj instanceof Array)
       notified = obj;
   }
-  update(0);
-  setInterval(update, 1000*60*10, 0);
+  //最新通知
+  update(21530, 0);
+  //即时更新
+  update(20, 0);
+  //学院新闻
+  update(17, 0);
+  setInterval(update, 1000*60*20, 21530, 0);
+  setInterval(update, 1000*60*10, 20, 0);
+  setInterval(update, 1000*60*30, 17, 0);
 });
 
 
 
-function update(page) {
+function update(catalog_id, page) {
   var chunkList = [];
   var contentLength = 0;
 
-  var req = http.get("http://cspo.zju.edu.cn/redir.php?catalog_id=21530"+"&page="+page, function(res) {
-    console.log("---------------page " + page + " ---------------");
+  var req = http.get("http://cspo.zju.edu.cn/redir.php?catalog_id=" + catalog_id +"&page="+page, function(res) {
+    console.log("---------------cid: " + catalog_id +" page: " + page + " ---------------");
 
     res.on('data', function(chunk) {
       contentLength += chunk.length;
@@ -48,16 +53,19 @@ function update(page) {
       }
       var html = iconvlite.decode(buffer, 'gb2312');
       env(html, function (errors, window) {
-
+        'use strict'
         var $ = jquery(window);
         var k = children($('.container').eq(1), 7, 1);
         k = children(k, 0, 1);
         k = children(k, 4, 0).children('tr');
-        var ret = getPosts(k);
+        var eq = 0;
+        if(catalog_id == 20)
+          eq = 1;
+        var ret = getPosts(k, eq);
         window.close();
         notify(ret.list);
         if(ret.next)
-          update(page+1);
+          update(catalog_id, page+1);
         else {
           console.log('Update finished!  ' + new Date().toLocaleTimeString());
         }
@@ -84,7 +92,7 @@ function children(parent, n, i) {
   return parent.children().eq(i);
 }
 
-function getPosts(k) {
+function getPosts(k,eq) {
   var today = getToday();
   var len = k.length;
   var timestamp;
@@ -93,19 +101,25 @@ function getPosts(k) {
   ret.next = true;
 
   for(var i = 0; i < len-1; i++) {
+    //兼容即时更新页面
+    if(k.eq(i).find('td').length < 3)
+      continue;
     var postDate = k.eq(i).children('.header-yz');
-    var title = k.eq(i).find('a').attr('title');
-    var url = k.eq(i).find('a').attr('href');
+    var title = k.eq(i).find('a').eq(eq).attr('title');
+    var url = k.eq(i).find('a').eq(eq).attr('href');
 
     if(postDate.length == 0) continue;
-    if(title.indexOf('读书报告') < 0) continue;
 
     postDate = postDate.text().substr(1,10);
     var temp = Date.parse(postDate);
-    if(temp < today-oneDay*20) {
+    //过期
+    if(temp < today-oneDay*10) {
       ret.next = false;
       return ret;
     }
+
+    if(title.indexOf('读书报告') < 0) continue;
+
     ret.list.push({
       title: title,
       url:   url
@@ -116,7 +130,7 @@ function getPosts(k) {
 
 
 function isNotified(url, mail) {
-  var id = url.slice(-6);
+  var id = url.slice(url.lastIndexOf("=")+1);
   for(var i = 0; i < notified.length; i++) {
     if(notified[i].id == id && notified[i].user == mail)
       return true;
@@ -136,7 +150,7 @@ function getToday() {
 
 function notify(list) {
   if(list.length == 0) return;
-  
+
   var transport = nodemailer.createTransport({
     host: "smtp.zju.edu.cn",
     secure: true, // use SSL
@@ -168,7 +182,7 @@ function notify(list) {
         }else{
 
           list.forEach(function(item) {
-            notified.push({id:item.url.slice(-6), user:mail});
+            notified.push({id:item.url.slice(item.url.lastIndexOf("=")+1), user:mail});
           });
           fs.writeFile('./notified.txt', JSON.stringify(notified));
           console.log("Message sent to " + mail);
