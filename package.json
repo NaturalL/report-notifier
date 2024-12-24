@@ -7,6 +7,6 @@
     "iconv-lite": "latest",
     "jquery": "~> 3.5.0",
     "jsdom": "~1.0.3",
-    "nodemailer": "~> 6.4.16"
+    "nodemailer": "6.9.9"
   }
 }
